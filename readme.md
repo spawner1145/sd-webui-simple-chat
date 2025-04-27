@@ -38,3 +38,10 @@ python -m scripts.app
 ### 2. 作为插件使用，不解释
 
 ~~你说的对，readme是ai写的(~~
+
+### 演示视频，注意我api配置没有展示，自己解决
+
+
+
+https://github.com/user-attachments/assets/c3ee2329-b931-4788-b55f-a6a0161e88f9
+
