@@ -97,7 +97,7 @@ async def sd_draw(prompt: str, height: int = 1536, width: int = 1024, steps: int
             global_sd_base64 = r["images"][0]
             logger.info(f"图片生成成功，Base64 前100字符: {global_sd_base64[:100]}")
 
-            message_md = f"![Generated Image](data:image/png;base64,{global_sd_base64})"
+            message_md = f'<img src="data:image/png;base64,{global_sd_base64}" alt="Generated Image" style="height:250px;">'
             global_chatbot.append({"role": "assistant", "content": message_md})
             logger.info("Markdown 图片气泡已追加到 global_chatbot")
             return "图片已生成"
@@ -203,7 +203,7 @@ async def chat_with_ai(
                 buffered = io.BytesIO()
                 img.save(buffered, format="PNG")
                 img_str = base64.b64encode(buffered.getvalue()).decode()
-            user_message_md += f"\n![Uploaded Image](data:image/png;base64,{img_str})"
+            user_message_md += f'\n<img src="data:image/png;base64,{img_str}" alt="Uploaded Image" style="height:250px;">'
         except Exception as e:
             logger.error(f"处理图片 {img_path} 失败: {str(e)}")
             user_message_md += f"\n[图片加载失败: {str(e)}]"
