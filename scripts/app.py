@@ -5,7 +5,9 @@ from PIL import Image
 import io
 import logging
 import httpx
+import os
 from backend.OpenAIAPI import OpenAIAPI
+from backend.sillytavern import use_folder_chara
 try:
     from modules import script_callbacks, shared
     IN_WEBUI = True
@@ -120,8 +122,8 @@ async def send_assistant_message_without_history(chatbot: List[Dict], text: str 
     chatbot.append({"role": "assistant", "content": message_md})
     return chatbot, message_md
 
-def initialize_api(apikey: str, baseurl: str, model: str, proxy: str, system_instruction: str) -> str:
-    """初始化API，更新全局变量"""
+async def initialize_api(apikey: str, baseurl: str, model: str, proxy: str, system_instruction: str, ai_name: str, user_name: str, use_tavern_card: bool, tavern_card_path: str) -> str:
+    """初始化API，更新全局变量，并替换system_instruction中的{{user}}和{{char}}"""
     global global_api, global_chatbot, global_sdapi
     try:
         proxies = {"http://": proxy, "https://": proxy} if proxy else None
@@ -131,7 +133,22 @@ def initialize_api(apikey: str, baseurl: str, model: str, proxy: str, system_ins
             model=model,
             proxies=proxies
         )
-        global_api.system_instruction = system_instruction.strip() if system_instruction else ""
+        # Handle system instruction based on tavern card usage
+        if use_tavern_card and tavern_card_path:
+            try:
+                # Construct full path relative to app.py
+                full_path = os.path.join("charas", tavern_card_path)
+                system_instruction = await use_folder_chara(full_path)
+            except Exception as e:
+                logger.error(f"加载角色卡失败: {str(e)}")
+                return f"加载角色卡失败: {str(e)}"
+        else:
+            system_instruction = system_instruction.strip() if system_instruction else ""
+        
+        # Replace {{user}} with user_name and {{char}} with ai_name
+        system_instruction = system_instruction.replace("{{user}}", user_name or "主人")
+        system_instruction = system_instruction.replace("{{char}}", ai_name or "Neko")
+        global_api.system_instruction = system_instruction
         global_chatbot = []
         return "API初始化成功！"
     except Exception as e:
@@ -253,11 +270,19 @@ def clear_chat() -> tuple:
     return [], "", [], []
 
 def create_ui():
+    # Create charas folder
+    charas_dir = "./charas"
+    os.makedirs(charas_dir, exist_ok=True)
+    
+    # Get list of files in charas folder
+    charas_files = [f for f in os.listdir(charas_dir) if os.path.isfile(os.path.join(charas_dir, f))]
+    
     # Gradio 界面
     with gr.Blocks() as demo:
         gr.Markdown("# 简易聊天")
 
         chat_history_state = gr.State(value=[])
+        use_tavern_card_state = gr.State(value=False)
 
         with gr.Column():
             chatbot = gr.Chatbot(label="聊天记录", height=480, type="messages")
@@ -300,10 +325,31 @@ def create_ui():
                     placeholder="输入代理例如http://127.0.0.1:7890",
                     value=""
                 )
+                use_tavern_card = gr.Checkbox(
+                    label="使用酒馆角色卡",
+                    value=False
+                )
                 system_instruction_input = gr.Textbox(
                     label="System Instruction (可选)",
                     placeholder="请输入系统指令（如：'你是一只猫娘'）",
-                    lines=3
+                    lines=3,
+                    visible=True
+                )
+                tavern_card_dropdown = gr.Dropdown(
+                    label="选择角色卡",
+                    choices=charas_files,
+                    visible=False,
+                    allow_custom_value=False
+                )
+                ai_name_input = gr.Textbox(
+                    label="AI的称呼(替换{{char}})",
+                    placeholder="请输入AI的称呼",
+                    value="Neko"
+                )
+                user_name_input = gr.Textbox(
+                    label="用户的称呼(替换{{user}})",
+                    placeholder="请输入用户的称呼",
+                    value="主人"
                 )
                 init_btn = gr.Button("初始化API")
                 config_output = gr.Textbox(label="初始化状态", interactive=False)
@@ -318,9 +364,21 @@ def create_ui():
                 give_score = gr.Checkbox(label="是否调用画图函数结束以后让AI评价图片", value=False)
 
         # 事件处理
+        def update_system_input_visibility(use_tavern):
+            return {
+                system_instruction_input: gr.update(visible=not use_tavern),
+                tavern_card_dropdown: gr.update(visible=use_tavern)
+            }
+
+        use_tavern_card.change(
+            fn=update_system_input_visibility,
+            inputs=[use_tavern_card],
+            outputs=[system_instruction_input, tavern_card_dropdown]
+        )
+
         init_btn.click(
             fn=initialize_api,
-            inputs=[apikey_input, baseurl_input, model_input, proxy_input, system_instruction_input],
+            inputs=[apikey_input, baseurl_input, model_input, proxy_input, system_instruction_input, ai_name_input, user_name_input, use_tavern_card, tavern_card_dropdown],
             outputs=[config_output]
         )
         submit_btn.click(
